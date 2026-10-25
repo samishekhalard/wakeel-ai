@@ -504,17 +504,28 @@ async def run_agent_turn(
     }
 
     reply: str | None = None
+    empty_content_count = 0  # track consecutive empty-content responses
 
     try:
-        for _ in range(5):   # max tool-call depth
+        for _ in range(8):   # extra headroom for empty-content retries
             response   = await call_llm(messages)
             choice     = response["choices"][0]
             message    = choice["message"]
             tool_calls = message.get("tool_calls") or []
 
             if not tool_calls:
-                reply = message.get("content") or ""
-                break
+                content = message.get("content") or ""
+                if content.strip():
+                    reply = content
+                    break
+                # Model returned empty content — retry up to 2 extra times
+                empty_content_count += 1
+                if empty_content_count >= 2:
+                    break  # give up; fallback fires below
+                # Don't append empty message to history; just loop
+                continue
+
+            empty_content_count = 0  # reset on any tool call response
 
             # Build sanitized copies of tool_calls before appending to history.
             # Mutating the response dict in-place is unreliable; a new dict
@@ -556,21 +567,11 @@ async def run_agent_turn(
         suffix = f"\n\n[DEBUG: {type(exc).__name__}: {exc}]" if settings.debug else ""
         return _err_msgs.get(language, _err_msgs["en"]) + suffix, context
 
-    # If model returned empty content, re-prompt once for a text response
-    if reply is not None and not reply.strip():
-        try:
-            retry_resp = await call_llm(messages)
-            retry_msg = retry_resp["choices"][0]["message"]
-            if not retry_msg.get("tool_calls") and retry_msg.get("content", "").strip():
-                reply = retry_msg["content"]
-        except Exception:
-            pass
-        if not reply or not reply.strip():
-            reply = _err_msgs.get(language, _err_msgs["en"])
+    # Final fallback: reply is still None or empty after all iterations
+    if not reply or not reply.strip():
+        reply = _err_msgs.get(language, _err_msgs["en"])
 
     # Apply keyword safety-net after all tool calls settle
     _apply_intent_correction(conversation, context)
 
-    if reply is not None:
-        return reply, context
-    return _err_msgs.get(language, _err_msgs["en"]), context
+    return reply, context
