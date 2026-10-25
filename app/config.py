@@ -8,7 +8,7 @@ class Settings(BaseSettings):
 
     llm_base_url: str = "https://openrouter.ai/api/v1"
     llm_api_key: str = "sk-placeholder"
-    llm_model: str = "meta-llama/llama-3.1-8b-instruct:free"
+    llm_model: str = "nvidia/nemotron-3.5-lightning:free"
     database_url: str = "sqlite+aiosqlite:///./wakeel.db"
     app_secret: str = "dev_secret"
     debug: bool = True

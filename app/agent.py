@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 import httpx
 
 from app.config import settings
 from app.listings import match_listings, format_listing_for_chat
+
+log = logging.getLogger(__name__)
 
 
 # ── System prompt ────────────────────────────────────────────────────────────
@@ -163,8 +166,21 @@ async def call_llm(messages: list[dict]) -> dict[str, Any]:
             headers=headers,
             json=payload,
         )
-        resp.raise_for_status()
+        if not resp.is_success:
+            body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+            err_msg = body.get("error", {}).get("message", resp.text[:200])
+            log.error("LLM %s — model=%s — %s", resp.status_code, settings.llm_model, err_msg)
+            raise LLMError(resp.status_code, err_msg)
         return resp.json()
+
+
+# ── Error type ───────────────────────────────────────────────────────────────
+
+class LLMError(Exception):
+    def __init__(self, status: int, message: str):
+        self.status = status
+        self.message = message
+        super().__init__(f"LLM {status}: {message}")
 
 
 # ── Tool execution ────────────────────────────────────────────────────────────
@@ -236,38 +252,48 @@ async def run_agent_turn(
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}] + conversation
 
-    # Agentic loop: keep calling LLM until it returns a text response
-    for _ in range(5):  # max 5 tool calls per turn
-        response = await call_llm(messages)
-        choice = response["choices"][0]
-        message = choice["message"]
-
-        tool_calls = message.get("tool_calls") or []
-
-        if not tool_calls:
-            # Final text response
-            return message.get("content", ""), context
-
-        # Execute tool calls and add results to message history
-        messages.append(message)
-        for tc in tool_calls:
-            fn_name = tc["function"]["name"]
-            try:
-                fn_args = json.loads(tc["function"]["arguments"])
-            except (json.JSONDecodeError, KeyError):
-                fn_args = {}
-
-            result = _execute_tool(fn_name, fn_args, context, language)
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc["id"],
-                "content": result,
-            })
-
-    # Fallback if loop exhausted
-    fallback = {
-        "ar": "عذراً، حدث خطأ. حاول مجدداً.",
-        "ru": "Извините, произошла ошибка. Попробуйте ещё раз.",
-        "en": "Sorry, something went wrong. Please try again.",
+    _generic_error = {
+        "ar": "عذراً، حدث خطأ مؤقت. حاول مجدداً بعد لحظة.",
+        "ru": "Извините, временная ошибка. Попробуйте ещё раз.",
+        "en": "Sorry, something went wrong. Please try again in a moment.",
     }
-    return fallback.get(language, fallback["en"]), context
+
+    try:
+        # Agentic loop: keep calling LLM until it returns a text response
+        for _ in range(5):  # max 5 tool calls per turn
+            response = await call_llm(messages)
+            choice = response["choices"][0]
+            message = choice["message"]
+
+            tool_calls = message.get("tool_calls") or []
+
+            if not tool_calls:
+                content = message.get("content") or ""
+                return content, context
+
+            # Execute tool calls and add results to message history
+            messages.append(message)
+            for tc in tool_calls:
+                fn_name = tc["function"]["name"]
+                try:
+                    fn_args = json.loads(tc["function"]["arguments"])
+                except (json.JSONDecodeError, KeyError):
+                    fn_args = {}
+
+                result = _execute_tool(fn_name, fn_args, context, language)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": result,
+                })
+
+    except LLMError as exc:
+        debug_suffix = f"\n\n[DEBUG: LLM {exc.status} — {exc.message}]" if settings.debug else ""
+        return _generic_error.get(language, _generic_error["en"]) + debug_suffix, context
+    except Exception as exc:
+        log.exception("Unexpected error in agent turn")
+        debug_suffix = f"\n\n[DEBUG: {type(exc).__name__}: {exc}]" if settings.debug else ""
+        return _generic_error.get(language, _generic_error["en"]) + debug_suffix, context
+
+    # Fallback if tool loop exhausted without text reply
+    return _generic_error.get(language, _generic_error["en"]), context

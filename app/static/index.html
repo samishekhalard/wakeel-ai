@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>Wakeel AI — Real Estate Assistant</title>
+  <link id="favicon" rel="icon" type="image/png" href="/static/wakeel-logo.png">
   <style>
     /* ── Reset & base ─────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -60,6 +61,12 @@
       justify-content: center;
       font-size: 1.4rem;
       flex-shrink: 0;
+      overflow: hidden;
+    }
+    .avatar img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
     }
 
     .header-info { flex: 1; }
@@ -117,7 +124,7 @@
     /* ── Message bubbles ──────────────────────────── */
     .msg-row {
       display: flex;
-      margin-bottom: 4px;
+      margin-bottom: 2px;
       animation: pop-in .2s ease;
     }
     @keyframes pop-in {
@@ -130,13 +137,13 @@
 
     .bubble {
       max-width: 78%;
-      padding: 9px 13px;
-      border-radius: 12px;
-      font-size: .9rem;
-      line-height: 1.5;
+      padding: 6px 10px 5px;
+      border-radius: 8px;
+      font-size: .875rem;
+      line-height: 1.45;
       position: relative;
       word-break: break-word;
-      box-shadow: 0 1px 2px rgba(0,0,0,.12);
+      box-shadow: 0 1px 1px rgba(0,0,0,.10);
       white-space: pre-wrap;
     }
 
@@ -158,10 +165,10 @@
 
     .bubble time {
       display: block;
-      font-size: .68rem;
-      color: rgba(0,0,0,.45);
+      font-size: .67rem;
+      color: rgba(0,0,0,.42);
       text-align: right;
-      margin-top: 4px;
+      margin-top: 2px;
     }
 
     /* ── Typing indicator ─────────────────────────── */
@@ -282,7 +289,11 @@
 
   <!-- Header -->
   <header>
-    <div class="avatar">⚖️</div>
+    <div class="avatar" id="header-avatar">
+      <img src="/static/wakeel-logo.png" alt="Wakeel" id="logo-img"
+           onerror="this.style.display='none';document.getElementById('logo-fallback').style.display='flex'">
+      <span id="logo-fallback" style="display:none">⚖️</span>
+    </div>
     <div class="header-info">
       <h1>Wakeel <span style="color:var(--gold)">AI</span> &nbsp;<span id="score-badge"></span></h1>
       <div class="subtitle" id="agent-subtitle">Real Estate Assistant · Dubai &amp; Riyadh</div>
