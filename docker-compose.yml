@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  wakeel:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - wakeel_data:/app/data_persist
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:////app/data_persist/wakeel.db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  wakeel_data:
