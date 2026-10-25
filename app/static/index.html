@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Wakeel AI — Real Estate Assistant</title>
+  <style>
+    /* ── Reset & base ─────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy: #0B1E3F;
+      --gold: #C9962E;
+      --gold-light: #e8b84b;
+      --bg: #ECE5DD;
+      --bubble-out: #DCF8C6;
+      --bubble-in: #FFFFFF;
+      --header-h: 64px;
+      --input-h: 68px;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: #111;
+    }
+
+    /* ── App shell ────────────────────────────────── */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      max-width: 480px;
+      margin: 0 auto;
+      box-shadow: 0 0 40px rgba(0,0,0,.25);
+      background: var(--bg);
+      position: relative;
+    }
+
+    /* ── Header ───────────────────────────────────── */
+    header {
+      background: var(--navy);
+      height: var(--header-h);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 12px;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 10;
+    }
+
+    .avatar {
+      width: 42px; height: 42px;
+      border-radius: 50%;
+      background: var(--gold);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      flex-shrink: 0;
+    }
+
+    .header-info { flex: 1; }
+    .header-info h1 {
+      color: white;
+      font-size: 1rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+    .header-info .subtitle {
+      color: rgba(255,255,255,.65);
+      font-size: .75rem;
+    }
+
+    #status-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #4CAF50;
+      box-shadow: 0 0 0 2px rgba(76,175,80,.3);
+      flex-shrink: 0;
+    }
+
+    .dash-link {
+      color: var(--gold);
+      font-size: .75rem;
+      text-decoration: none;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+
+    /* ── Score badge ──────────────────────────────── */
+    #score-badge {
+      display: none;
+      padding: 4px 12px;
+      border-radius: 99px;
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    #score-badge.hot  { background: #e74c3c; color: white; display: inline-block; }
+    #score-badge.warm { background: #f39c12; color: white; display: inline-block; }
+    #score-badge.cold { background: #3498db; color: white; display: inline-block; }
+
+    /* ── Chat background pattern ──────────────────── */
+    #messages-bg {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 16px 12px;
+      scroll-behavior: smooth;
+      background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23C9962E' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    }
+
+    /* ── Message bubbles ──────────────────────────── */
+    .msg-row {
+      display: flex;
+      margin-bottom: 4px;
+      animation: pop-in .2s ease;
+    }
+    @keyframes pop-in {
+      from { opacity: 0; transform: scale(.96) translateY(4px); }
+      to   { opacity: 1; transform: scale(1)   translateY(0); }
+    }
+
+    .msg-row.out { justify-content: flex-end; }
+    .msg-row.in  { justify-content: flex-start; }
+
+    .bubble {
+      max-width: 78%;
+      padding: 9px 13px;
+      border-radius: 12px;
+      font-size: .9rem;
+      line-height: 1.5;
+      position: relative;
+      word-break: break-word;
+      box-shadow: 0 1px 2px rgba(0,0,0,.12);
+      white-space: pre-wrap;
+    }
+
+    .msg-row.out .bubble {
+      background: var(--bubble-out);
+      border-bottom-right-radius: 4px;
+    }
+
+    .msg-row.in .bubble {
+      background: var(--bubble-in);
+      border-bottom-left-radius: 4px;
+    }
+
+    /* RTL bubble for Arabic */
+    .bubble[dir="rtl"] {
+      text-align: right;
+      font-size: .95rem;
+    }
+
+    .bubble time {
+      display: block;
+      font-size: .68rem;
+      color: rgba(0,0,0,.45);
+      text-align: right;
+      margin-top: 4px;
+    }
+
+    /* ── Typing indicator ─────────────────────────── */
+    #typing {
+      display: none;
+      align-items: center;
+      gap: 4px;
+      padding: 12px 14px;
+      background: white;
+      border-radius: 12px;
+      border-bottom-left-radius: 4px;
+      width: 64px;
+      box-shadow: 0 1px 2px rgba(0,0,0,.12);
+      margin-bottom: 4px;
+    }
+    #typing.visible { display: flex; }
+    #typing span {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #aaa;
+      animation: bounce 1.3s infinite;
+    }
+    #typing span:nth-child(2) { animation-delay: .15s; }
+    #typing span:nth-child(3) { animation-delay: .3s; }
+    @keyframes bounce {
+      0%, 60%, 100% { transform: translateY(0); }
+      30%            { transform: translateY(-5px); }
+    }
+
+    /* ── Quick-reply chips ────────────────────────── */
+    #quick-replies {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 8px 12px;
+      flex-shrink: 0;
+    }
+    .chip {
+      background: white;
+      border: 1.5px solid var(--gold);
+      color: var(--navy);
+      border-radius: 99px;
+      padding: 6px 14px;
+      font-size: .82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    .chip:hover, .chip:active {
+      background: var(--gold);
+      color: white;
+    }
+
+    /* ── Input area ───────────────────────────────── */
+    #input-area {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      background: #f0f2f5;
+      flex-shrink: 0;
+    }
+
+    #msg-input {
+      flex: 1;
+      border: none;
+      outline: none;
+      background: white;
+      border-radius: 24px;
+      padding: 11px 18px;
+      font-size: .95rem;
+      resize: none;
+      max-height: 120px;
+      overflow-y: auto;
+      line-height: 1.4;
+      font-family: inherit;
+      box-shadow: 0 1px 3px rgba(0,0,0,.1);
+    }
+
+    #send-btn {
+      width: 46px; height: 46px;
+      border-radius: 50%;
+      background: var(--navy);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background .15s, transform .1s;
+      color: white;
+    }
+    #send-btn:hover  { background: #162e5c; }
+    #send-btn:active { transform: scale(.92); }
+    #send-btn svg { width: 22px; height: 22px; fill: currentColor; }
+
+    /* ── Handoff / viewing banners ────────────────── */
+    .banner {
+      margin: 8px 12px;
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: .82rem;
+      font-weight: 600;
+      text-align: center;
+      animation: pop-in .3s ease;
+    }
+    .banner.handoff  { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
+    .banner.viewing  { background: #d4edda; color: #155724; border: 1px solid #28a745; }
+
+    /* ── Desktop backdrop ─────────────────────────── */
+    @media (min-width: 481px) {
+      body { background: var(--navy); }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Header -->
+  <header>
+    <div class="avatar">⚖️</div>
+    <div class="header-info">
+      <h1>Wakeel <span style="color:var(--gold)">AI</span> &nbsp;<span id="score-badge"></span></h1>
+      <div class="subtitle" id="agent-subtitle">Real Estate Assistant · Dubai &amp; Riyadh</div>
+    </div>
+    <div id="status-dot"></div>
+    <a href="/dashboard" class="dash-link">Dashboard</a>
+  </header>
+
+  <!-- Messages -->
+  <div id="messages-bg">
+    <!-- intro bubble injected via JS -->
+  </div>
+
+  <!-- Quick replies -->
+  <div id="quick-replies"></div>
+
+  <!-- Input -->
+  <div id="input-area">
+    <textarea id="msg-input" rows="1" placeholder="Type a message..."></textarea>
+    <button id="send-btn" aria-label="Send">
+      <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
+  </div>
+
+</div>
+
+<script>
+  const msgsEl   = document.getElementById('messages-bg');
+  const inputEl  = document.getElementById('msg-input');
+  const sendBtn  = document.getElementById('send-btn');
+  const typingEl = document.getElementById('typing');
+  const qrEl     = document.getElementById('quick-replies');
+  const badge    = document.getElementById('score-badge');
+
+  let sessionId  = localStorage.getItem('wk_session') || null;
+  let isTyping   = false;
+  let currentLang = 'en';
+
+  // ── Detect RTL ──────────────────────────────────────
+  function isRTL(text) {
+    return /[؀-ۿݐ-ݿ]/.test(text);
+  }
+
+  // ── Format time ──────────────────────────────────────
+  function nowTime() {
+    return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // ── Add bubble ────────────────────────────────────────
+  function addBubble(text, role) {
+    const rtl = isRTL(text);
+    const row = document.createElement('div');
+    row.className = `msg-row ${role === 'user' ? 'out' : 'in'}`;
+
+    // Convert *bold* markdown
+    const html = text
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\*([^*]+)\*/g,'<strong>$1</strong>');
+
+    row.innerHTML = `
+      <div class="bubble" ${rtl ? 'dir="rtl"' : ''}>
+        ${html}
+        <time>${nowTime()}</time>
+      </div>`;
+    msgsEl.appendChild(row);
+    scrollDown();
+  }
+
+  // ── Typing indicator ─────────────────────────────────
+  function showTyping(show) {
+    const existing = document.getElementById('typing-row');
+    if (show && !existing) {
+      const row = document.createElement('div');
+      row.className = 'msg-row in';
+      row.id = 'typing-row';
+      row.innerHTML = `<div id="typing" class="visible"><span></span><span></span><span></span></div>`;
+      msgsEl.appendChild(row);
+      scrollDown();
+    } else if (!show && existing) {
+      existing.remove();
+    }
+  }
+
+  // ── Scroll to bottom ────────────────────────────────
+  function scrollDown() {
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+  }
+
+  // ── Score badge ──────────────────────────────────────
+  function updateBadge(score) {
+    badge.className = score;
+    const labels = { hot: '🔥 Hot', warm: '⚡ Warm', cold: '❄️ Cold' };
+    badge.textContent = labels[score] || '';
+  }
+
+  // ── Quick replies by language ────────────────────────
+  const QUICK_REPLIES = {
+    en: ['I want to buy', 'I want to rent', 'Dubai properties', 'Riyadh properties', 'Book a viewing'],
+    ar: ['أبي أشتري', 'أبي أستأجر', 'عقارات دبي', 'عقارات الرياض', 'احجز جولة'],
+    ru: ['Хочу купить', 'Хочу арендовать', 'Недвижимость Дубай', 'Недвижимость Эр-Рияд', 'Записаться на просмотр'],
+  };
+
+  function showQuickReplies(lang) {
+    qrEl.innerHTML = '';
+    const options = QUICK_REPLIES[lang] || QUICK_REPLIES.en;
+    options.forEach(opt => {
+      const btn = document.createElement('button');
+      btn.className = 'chip';
+      btn.textContent = opt;
+      btn.onclick = () => { sendMessage(opt); qrEl.innerHTML = ''; };
+      qrEl.appendChild(btn);
+    });
+  }
+
+  // ── Banner ────────────────────────────────────────────
+  function showBanner(type) {
+    const existing = document.getElementById(`banner-${type}`);
+    if (existing) return;
+    const messages = {
+      handoff: {
+        en: '🤝 A human agent will reach out to you shortly.',
+        ar: '🤝 سيتواصل معك وكيل بشري قريباً.',
+        ru: '🤝 Агент свяжется с вами в ближайшее время.'
+      },
+      viewing: {
+        en: '📅 Viewing requested! Our team will confirm the time.',
+        ar: '📅 تم طلب الجولة! سيتواصل فريقنا معك لتأكيد الموعد.',
+        ru: '📅 Просмотр запрошен! Наш менеджер подтвердит время.'
+      }
+    };
+    const div = document.createElement('div');
+    div.id = `banner-${type}`;
+    div.className = `banner ${type}`;
+    div.textContent = (messages[type]||{})[currentLang] || (messages[type]||{}).en || '';
+    msgsEl.appendChild(div);
+    scrollDown();
+  }
+
+  // ── Lang detection from response ────────────────────
+  function detectResponseLang(text) {
+    if (/[؀-ۿ]/.test(text)) return 'ar';
+    if (/[а-яА-ЯёЁ]/.test(text)) return 'ru';
+    return 'en';
+  }
+
+  // ── Auto-resize textarea ─────────────────────────────
+  inputEl.addEventListener('input', () => {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+  });
+
+  // ── Send on Enter (not shift) ────────────────────────
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  sendBtn.addEventListener('click', () => sendMessage());
+
+  // ── Core send ────────────────────────────────────────
+  async function sendMessage(text) {
+    const msg = (text || inputEl.value).trim();
+    if (!msg || isTyping) return;
+
+    inputEl.value = '';
+    inputEl.style.height = 'auto';
+    qrEl.innerHTML = '';
+    addBubble(msg, 'user');
+    isTyping = true;
+    showTyping(true);
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg, session_id: sessionId }),
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      sessionId = data.session_id;
+      localStorage.setItem('wk_session', sessionId);
+
+      showTyping(false);
+      addBubble(data.reply, 'assistant');
+
+      const lang = detectResponseLang(data.reply);
+      currentLang = lang;
+
+      updateBadge(data.score);
+      if (data.handoff)        showBanner('handoff');
+      if (data.viewing_booked) showBanner('viewing');
+
+      // Show quick replies after first exchange
+      if (document.querySelectorAll('.msg-row').length <= 3) {
+        showQuickReplies(lang);
+      }
+
+    } catch (err) {
+      showTyping(false);
+      const errMsg = {
+        en: '⚠️ Connection error. Please check your internet and try again.',
+        ar: '⚠️ خطأ في الاتصال. تحقق من الإنترنت وحاول مجدداً.',
+        ru: '⚠️ Ошибка соединения. Проверьте интернет и попробуйте снова.'
+      };
+      addBubble(errMsg[currentLang] || errMsg.en, 'assistant');
+    } finally {
+      isTyping = false;
+      inputEl.focus();
+    }
+  }
+
+  // ── Greeting on load ─────────────────────────────────
+  function showGreeting() {
+    const greetings = [
+      `Hello! 👋 I'm Wakeel, your AI real estate assistant.\n\nI can help you find properties in Dubai and Riyadh. Are you looking to buy or rent?`,
+    ];
+    addBubble(greetings[0], 'assistant');
+    showQuickReplies('en');
+  }
+
+  // ── Init ─────────────────────────────────────────────
+  (async function init() {
+    if (sessionId) {
+      // Restore previous session
+      try {
+        const res = await fetch(`/api/chat/history/${sessionId}`);
+        if (res.ok) {
+          const history = await res.json();
+          if (history.length > 0) {
+            history.forEach(m => addBubble(m.content, m.role));
+            const lastAssistant = [...history].reverse().find(m => m.role === 'assistant');
+            if (lastAssistant) {
+              currentLang = detectResponseLang(lastAssistant.content);
+            }
+            return;
+          }
+        }
+      } catch (_) {}
+    }
+    showGreeting();
+  })();
+</script>
+</body>
+</html>
