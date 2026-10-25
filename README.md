@@ -102,7 +102,7 @@ LLM_MODEL=meta-llama/llama-3.1-8b-instruct:free
 ### 2. Run locally (Python)
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
@@ -179,7 +179,7 @@ wakeel-ai/
 
 ## Tech Stack
 
-- **Python 3.11** · **FastAPI** · **SQLAlchemy async** · **SQLite**
+- **Python 3.12** · **FastAPI** · **SQLAlchemy async** · **SQLite**
 - **Pydantic v2** for validation and settings
 - **httpx** for async LLM API calls
 - **Docker** + **docker-compose**
