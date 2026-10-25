@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime
 from fastapi import APIRouter, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,7 +24,7 @@ async def get_db(request) -> AsyncSession:  # type: ignore[override]
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(min_length=1, max_length=2000)
     session_id: str | None = None
 
 
