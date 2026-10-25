@@ -354,30 +354,39 @@ def _parse_retry_after(err_msg: str) -> float:
     return min(float(m.group(1)) if m else 15.0, 30.0)
 
 
+def _is_daily_limit(msg: str) -> bool:
+    """True when Groq 429 is a daily quota error — retrying is pointless."""
+    low = msg.lower()
+    return any(k in low for k in ("per_day", "tokens per day", "tpd", "daily limit"))
+
+
 async def call_llm(messages: list[dict]) -> dict[str, Any]:
-    """Try Groq first; fall back to OpenRouter on 429/5xx.
-    On 429 with no OpenRouter fallback, retry up to 2× with backoff.
+    """Try Groq first; on any 429/5xx switch to OpenRouter immediately if configured.
+    Only retry Groq (once, with backoff) when no fallback is available and the error
+    is a per-minute limit. Daily quota errors surface immediately without retry.
+    Raises only when both providers are exhausted or neither is configured.
     """
     groq_key = _resolve_groq_key()
+
     if groq_key:
-        for attempt in range(3):
-            try:
-                log.debug("Using Groq model=%s (attempt %d)", settings.groq_model, attempt + 1)
-                return await _call_provider(
-                    messages, GROQ_BASE_URL, groq_key, settings.groq_model
-                )
-            except LLMError as exc:
-                if exc.status not in (429, 500, 502, 503, 529):
-                    raise  # auth/model errors surface immediately
-                if _openrouter_available():
-                    log.warning("Groq %s — falling back to OpenRouter", exc.status)
-                    break  # exit retry loop, use OpenRouter below
-                if attempt < 2:
-                    wait = _parse_retry_after(exc.message) if exc.status == 429 else 10.0
-                    log.warning("Groq %s — no OR fallback, retrying in %.1fs", exc.status, wait)
-                    await asyncio.sleep(wait)
-                else:
-                    raise  # retries exhausted, no fallback
+        try:
+            log.debug("Using Groq model=%s", settings.groq_model)
+            return await _call_provider(messages, GROQ_BASE_URL, groq_key, settings.groq_model)
+        except LLMError as exc:
+            if exc.status not in (429, 500, 502, 503, 529):
+                raise  # auth / model errors surface immediately
+            if _openrouter_available():
+                log.warning("Groq %s — switching to OpenRouter immediately", exc.status)
+                # fall through to OpenRouter block below
+            else:
+                # No fallback: retry once for per-minute limits; fail fast for daily limits
+                if exc.status == 429 and _is_daily_limit(exc.message):
+                    log.warning("Groq daily quota exhausted — no fallback configured")
+                    raise
+                wait = _parse_retry_after(exc.message) if exc.status == 429 else 10.0
+                log.warning("Groq %s — retrying in %.1fs (no fallback configured)", exc.status, wait)
+                await asyncio.sleep(wait)
+                return await _call_provider(messages, GROQ_BASE_URL, groq_key, settings.groq_model)
 
     if not _openrouter_available():
         raise LLMError(503, "No LLM provider available — set GROQ_API_KEY or LLM_API_KEY")
