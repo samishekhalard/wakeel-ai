@@ -7,7 +7,7 @@ from app.listings import match_listings, format_listing_for_chat, get_all
 class TestGetAll:
     def test_total_count(self):
         listings = get_all()
-        assert len(listings) == 45  # 30 Dubai + 15 Riyadh
+        assert len(listings) == 65  # 30 buy Dubai + 15 rent Dubai + 15 buy Riyadh + 5 rent Riyadh
 
     def test_all_have_id(self):
         for l in get_all():
@@ -15,7 +15,10 @@ class TestGetAll:
 
     def test_all_have_price(self):
         for l in get_all():
-            has_price = l.get("price_aed") or l.get("price_sar")
+            has_price = (
+                l.get("price_aed") or l.get("price_sar")
+                or l.get("rent_aed_year") or l.get("rent_sar_year")
+            )
             assert has_price, f"Listing {l.get('id')} missing price"
 
 

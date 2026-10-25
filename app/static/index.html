@@ -69,7 +69,7 @@
       border-radius: 50%;
     }
 
-    .header-info { flex: 1; }
+    .header-info { flex: 1; min-width: 0; }
     .header-info h1 {
       color: white;
       font-size: 1rem;
@@ -94,8 +94,24 @@
       font-size: .75rem;
       text-decoration: none;
       font-weight: 600;
-      margin-left: 8px;
+      margin-left: 4px;
+      flex-shrink: 0;
     }
+
+    /* ── New chat button ──────────────────────────── */
+    #new-chat-btn {
+      background: transparent;
+      border: 1.5px solid rgba(255,255,255,.35);
+      color: rgba(255,255,255,.85);
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: .72rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+      flex-shrink: 0;
+    }
+    #new-chat-btn:hover { background: rgba(255,255,255,.12); }
 
     /* ── Score badge ──────────────────────────────── */
     #score-badge {
@@ -144,7 +160,7 @@
       position: relative;
       word-break: break-word;
       box-shadow: 0 1px 1px rgba(0,0,0,.10);
-      white-space: pre-wrap;
+      white-space: pre-line;
     }
 
     .msg-row.out .bubble {
@@ -278,6 +294,62 @@
     .banner.handoff  { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
     .banner.viewing  { background: #d4edda; color: #155724; border: 1px solid #28a745; }
 
+    /* ── Listing cards ────────────────────────────── */
+    .listing-cards {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 6px;
+      animation: pop-in .2s ease;
+    }
+    .listing-card {
+      background: white;
+      border-radius: 10px;
+      padding: 10px 13px;
+      font-size: .83rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,.12);
+      border-left: 3px solid var(--gold);
+      max-width: 86%;
+    }
+    .card-head {
+      font-weight: 700;
+      font-size: .85rem;
+      color: var(--navy);
+      margin-bottom: 3px;
+    }
+    .card-price {
+      color: var(--gold);
+      font-weight: 700;
+      font-size: .9rem;
+      margin-bottom: 4px;
+    }
+    .card-meta {
+      display: flex;
+      gap: 10px;
+      color: #555;
+      font-size: .78rem;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+    .card-desc {
+      color: #666;
+      font-size: .78rem;
+      margin-bottom: 7px;
+      font-style: italic;
+    }
+    .card-book-btn {
+      background: var(--navy);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: .76rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .card-book-btn:hover { background: #162e5c; }
+
     /* ── Desktop backdrop ─────────────────────────── */
     @media (min-width: 481px) {
       body { background: var(--navy); }
@@ -300,6 +372,7 @@
     </div>
     <div id="status-dot"></div>
     <a href="/dashboard" class="dash-link">Dashboard</a>
+    <button id="new-chat-btn" onclick="newChat()">+ New</button>
   </header>
 
   <!-- Messages -->
@@ -324,7 +397,6 @@
   const msgsEl   = document.getElementById('messages-bg');
   const inputEl  = document.getElementById('msg-input');
   const sendBtn  = document.getElementById('send-btn');
-  const typingEl = document.getElementById('typing');
   const qrEl     = document.getElementById('quick-replies');
   const badge    = document.getElementById('score-badge');
 
@@ -344,12 +416,14 @@
 
   // ── Add bubble ────────────────────────────────────────
   function addBubble(text, role) {
-    const rtl = isRTL(text);
+    const trimmed = (text || '').trim();
+    if (!trimmed) return;
+    const rtl = isRTL(trimmed);
     const row = document.createElement('div');
     row.className = `msg-row ${role === 'user' ? 'out' : 'in'}`;
 
-    // Convert *bold* markdown
-    const html = text
+    // Convert *bold* markdown, escape HTML
+    const html = trimmed
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
       .replace(/\*([^*]+)\*/g,'<strong>$1</strong>');
 
@@ -360,6 +434,59 @@
       </div>`;
     msgsEl.appendChild(row);
     scrollDown();
+  }
+
+  // ── Listing cards ─────────────────────────────────────
+  function addListingCards(listings) {
+    if (!listings || !listings.length) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'listing-cards';
+    listings.forEach(l => {
+      const price = l.price_aed   ? `AED ${l.price_aed.toLocaleString()}`
+                  : l.price_sar   ? `SAR ${l.price_sar.toLocaleString()}`
+                  : l.rent_aed_year ? `AED ${l.rent_aed_year.toLocaleString()}/yr`
+                  : l.rent_sar_year ? `SAR ${l.rent_sar_year.toLocaleString()}/yr`
+                  : '';
+      const beds = l.bedrooms === 0 ? 'Studio' : `${l.bedrooms} BR`;
+      const card = document.createElement('div');
+      card.className = 'listing-card';
+      const safeDesc = (l.description || '').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const safeArea = (l.area || '').replace(/</g,'&lt;');
+      const safeCity = (l.city || '').replace(/</g,'&lt;');
+      const safeId   = (l.id   || '').replace(/</g,'&lt;');
+      const safeView = (l.view || '').replace(/</g,'&lt;');
+      card.innerHTML = `
+        <div class="card-head">${safeArea}, ${safeCity} &nbsp;<span style="color:#888;font-weight:400;font-size:.75rem">${safeId}</span></div>
+        <div class="card-price">${price}</div>
+        <div class="card-meta">
+          <span>🛏 ${beds}</span>
+          <span>📐 ${l.size_sqft ? l.size_sqft.toLocaleString() + ' sqft' : ''}</span>
+          <span>🏠 ${l.property_type || ''}</span>
+          ${safeView ? `<span>👁 ${safeView}</span>` : ''}
+        </div>
+        <div class="card-desc">${safeDesc}</div>
+        <button class="card-book-btn" onclick="bookViewing('${l.id}')">📅 Book viewing</button>`;
+      wrap.appendChild(card);
+    });
+    msgsEl.appendChild(wrap);
+    scrollDown();
+  }
+
+  function bookViewing(listingId) {
+    sendMessage(`I'd like to book a viewing for ${listingId}`);
+  }
+
+  // ── New chat ──────────────────────────────────────────
+  function newChat() {
+    if (!confirm('Start a new conversation? This will clear the current chat.')) return;
+    localStorage.removeItem('wk_session');
+    sessionId = null;
+    msgsEl.innerHTML = '';
+    badge.className = '';
+    badge.textContent = '';
+    document.querySelectorAll('.banner').forEach(b => b.remove());
+    currentLang = 'en';
+    showGreeting();
   }
 
   // ── Typing indicator ─────────────────────────────────
@@ -483,6 +610,11 @@
       showTyping(false);
       addBubble(data.reply, 'assistant');
 
+      // Render listing cards if any
+      if (data.listings && data.listings.length) {
+        addListingCards(data.listings);
+      }
+
       const lang = detectResponseLang(data.reply);
       currentLang = lang;
 
@@ -511,17 +643,13 @@
 
   // ── Greeting on load ─────────────────────────────────
   function showGreeting() {
-    const greetings = [
-      `Hello! 👋 I'm Wakeel, your AI real estate assistant.\n\nI can help you find properties in Dubai and Riyadh. Are you looking to buy or rent?`,
-    ];
-    addBubble(greetings[0], 'assistant');
+    addBubble(`Hello! 👋 I'm Wakeel, your AI real estate assistant.\n\nI can help you find properties in Dubai and Riyadh. Are you looking to buy or rent?`, 'assistant');
     showQuickReplies('en');
   }
 
   // ── Init ─────────────────────────────────────────────
   (async function init() {
     if (sessionId) {
-      // Restore previous session
       try {
         const res = await fetch(`/api/chat/history/${sessionId}`);
         if (res.ok) {

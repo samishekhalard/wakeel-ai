@@ -51,6 +51,7 @@ class TestScoreLead:
             budget_max=1500000,
             city="Dubai",
             viewing_booked=True,
+            contact_phone="+971501234567",  # HOT requires phone
         )
         assert score_lead(lead) == LeadScore.HOT
 

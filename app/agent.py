@@ -67,6 +67,37 @@ No corporate jargon. Sound like a helpful friend who knows real estate.
 Use 1-2 emojis max to feel warm, not spammy.
 
 ════════════════════════════════════════════════════════════════
+LISTING DISPLAY — IMPORTANT
+════════════════════════════════════════════════════════════════
+
+When recommend_listings returns results, write ONE brief intro sentence ONLY.
+Property cards are displayed to the user automatically — do NOT list details in your text.
+WRONG: "Here's DXB003: 1BR, 680sqft, Marina view, AED 70,000/yr, gym, pool..."
+RIGHT:  "Found 2 options in Dubai Marina — check the cards below! 😊"
+RIGHT (Arabic):  "لقيت لك خيارين في دبي ماريناً — شوف التفاصيل أدناه 😊"
+RIGHT (Russian): "Нашёл 2 варианта в Dubai Marina — детали карточек ниже 😊"
+
+════════════════════════════════════════════════════════════════
+CONTACT CAPTURE — MANDATORY
+════════════════════════════════════════════════════════════════
+
+After showing listings, naturally ask for name and WhatsApp:
+  EN: "So I can have an agent follow up — what's your name and WhatsApp number?"
+  AR: "عشان نتابع معك — وش اسمك ورقم الواتساب؟"
+  RU: "Чтобы агент мог связаться — как вас зовут и номер WhatsApp?"
+Save with extract_qualification (contact_name, contact_phone).
+
+════════════════════════════════════════════════════════════════
+VIEWING SLOTS — MANDATORY
+════════════════════════════════════════════════════════════════
+
+After showing listings AND collecting contact info, offer 2 specific time slots:
+  EN: "Can I arrange a viewing tomorrow at 11am or Saturday at 5pm — which works?"
+  AR: "قدر أرتب جولة بكرة الساعة 11 الصبح أو السبت الساعة 5 المغرب — وش يناسبك؟"
+  RU: "Могу организовать просмотр завтра в 11:00 или в субботу в 17:00 — что удобнее?"
+When they confirm, call book_viewing with preferred_time set to the confirmed slot.
+
+════════════════════════════════════════════════════════════════
 QUALIFICATION GOAL
 ════════════════════════════════════════════════════════════════
 
@@ -130,8 +161,8 @@ TOOLS = [
                     "budget_max": _ns({"type": "number", "description": "Maximum budget (number only)"}),
                     "currency": {
                         "type": ["string", "null"],
-                        "enum": ["AED", "SAR", None],
-                        "description": "AED for Dubai, SAR for Riyadh",
+                        "enum": ["AED", "SAR", "USD", "EUR", "GBP", "RUB", None],
+                        "description": "AED for Dubai, SAR for Riyadh; USD/EUR/GBP/RUB if user mentions foreign currency",
                     },
                     "city": _ns({"type": "string", "description": "Dubai or Riyadh"}),
                     "area": _ns({"type": "string", "description": "Neighborhood or area name"}),
@@ -372,6 +403,7 @@ class AgentContext:
         self.listings: list[dict] = []
         self.handoff: bool = False
         self.viewing_booked: bool = False
+        self.viewing_time: str = ""
         self.language: str = "en"
 
 
@@ -395,7 +427,8 @@ def _execute_tool(name: str, args: dict, context: AgentContext, language: str) -
         return "ok"
 
     if name == "recommend_listings":
-        results = match_listings(
+        from app.listings import match_listings_best_effort
+        results, note = match_listings_best_effort(
             city=args.get("city"),
             intent=args.get("intent"),
             budget_max=args.get("budget_max"),
@@ -407,15 +440,22 @@ def _execute_tool(name: str, args: dict, context: AgentContext, language: str) -
         context.listings = results
         if not results:
             msgs = {
-                "ar": "ما لقيت عقارات مطابقة. خبرني أكثر عن اللي تبيه.",
-                "ru": "Подходящих объектов не найдено. Расскажите подробнее.",
-                "en": "No matching listings found. Let me ask a few more questions.",
+                "ar": "ما لقينا عقارات في هذا النطاق حالياً.",
+                "ru": "Пока нет объектов в этом диапазоне.",
+                "en": "No listings available in this range right now.",
             }
             return msgs.get(language, msgs["en"])
+        _notes: dict[str, dict[str, str]] = {
+            "nearby_area": {"en": " (closest areas shown)", "ar": " (مناطق قريبة)", "ru": " (ближайшие районы)"},
+            "slightly_over_budget": {"en": " (slightly over budget — best available)", "ar": " (أعلى قليلاً من الميزانية)", "ru": " (чуть выше бюджета)"},
+            "different_config": {"en": " (different config — closest available)", "ar": " (مواصفات مختلفة)", "ru": " (другая конфигурация)"},
+            "showing_available": {"en": " (showing available in city)", "ar": " (المتاح في المدينة)", "ru": " (доступное в городе)"},
+        }
+        note_str = _notes.get(note, {}).get(language, _notes.get(note, {}).get("en", "")) if note else ""
         return json.dumps(
             [format_listing_for_chat(l, language) for l in results],
             ensure_ascii=False,
-        )
+        ) + (f"\nNote for agent: {note_str}" if note_str else "")
 
     if name == "request_handoff":
         context.handoff = True
@@ -423,6 +463,7 @@ def _execute_tool(name: str, args: dict, context: AgentContext, language: str) -
 
     if name == "book_viewing":
         context.viewing_booked = True
+        context.viewing_time = args.get("preferred_time", "")
         return "viewing_booked"
 
     return "unknown_tool"
@@ -475,11 +516,26 @@ async def run_agent_turn(
                 reply = message.get("content") or ""
                 break
 
-            # Sanitize names before history append — prevents cascading 400s
-            for tc in tool_calls:
-                tc["function"]["name"] = _sanitize_tool_name(tc["function"]["name"])
-            messages.append(message)
-            for tc in tool_calls:
+            # Build sanitized copies of tool_calls before appending to history.
+            # Mutating the response dict in-place is unreliable; a new dict
+            # guarantees Groq's message-history validator sees clean names.
+            sanitized_calls = [
+                {
+                    "id": tc["id"],
+                    "type": tc.get("type", "function"),
+                    "function": {
+                        "name": _sanitize_tool_name(tc["function"]["name"]),
+                        "arguments": tc["function"]["arguments"],
+                    },
+                }
+                for tc in tool_calls
+            ]
+            messages.append({
+                "role": "assistant",
+                "content": message.get("content"),
+                "tool_calls": sanitized_calls,
+            })
+            for tc in sanitized_calls:
                 fn_name = tc["function"]["name"]
                 try:
                     fn_args = json.loads(tc["function"]["arguments"])
@@ -499,6 +555,18 @@ async def run_agent_turn(
         log.exception("Unexpected error in agent turn")
         suffix = f"\n\n[DEBUG: {type(exc).__name__}: {exc}]" if settings.debug else ""
         return _err_msgs.get(language, _err_msgs["en"]) + suffix, context
+
+    # If model returned empty content, re-prompt once for a text response
+    if reply is not None and not reply.strip():
+        try:
+            retry_resp = await call_llm(messages)
+            retry_msg = retry_resp["choices"][0]["message"]
+            if not retry_msg.get("tool_calls") and retry_msg.get("content", "").strip():
+                reply = retry_msg["content"]
+        except Exception:
+            pass
+        if not reply or not reply.strip():
+            reply = _err_msgs.get(language, _err_msgs["en"])
 
     # Apply keyword safety-net after all tool calls settle
     _apply_intent_correction(conversation, context)

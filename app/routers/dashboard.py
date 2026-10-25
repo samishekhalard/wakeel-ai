@@ -17,19 +17,31 @@ def _row(lead: Lead) -> str:
     phone = lead.contact_phone or "—"
     lang_flag = {"ar": "🇦🇪", "en": "🇬🇧", "ru": "🇷🇺"}.get(lead.language or "", "🌐")
     viewing = "✅" if lead.viewing_booked else ""
+    viewing_time = f" {lead.viewing_time}" if lead.viewing_booked and getattr(lead, "viewing_time", None) else ""
     handoff = "🤝" if lead.handoff_requested else ""
+    contacted = getattr(lead, "contacted", False)
+    contacted_style = "background:#27ae60" if contacted else "background:#95a5a6"
+    contacted_label = "Contacted ✓" if contacted else "Mark contacted"
     created = lead.created_at.strftime("%d %b %H:%M") if lead.created_at else "—"
-    summary = lead.summary or "—"
+    summary = (lead.summary or "—").replace('"', "&quot;")
 
     return f"""
     <tr>
       <td>{created}</td>
-      <td>{lang_flag} {name}</td>
+      <td>{lang_flag}&nbsp;{name}</td>
       <td>{phone}</td>
-      <td style="color:{score_color};font-weight:700">{score_emoji} {lead.score.upper()}</td>
+      <td><span class="badge-{lead.score}">{score_emoji} {lead.score.upper()}</span></td>
       <td>{lead.message_count}</td>
-      <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{summary}</td>
-      <td>{viewing} {handoff}</td>
+      <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{summary}">{summary}</td>
+      <td>{viewing}{viewing_time} {handoff}</td>
+      <td>
+        <a href="/api/leads/{lead.session_id}/conversation" target="_blank"
+           style="background:#0B1E3F;color:white;padding:4px 10px;border-radius:6px;
+                  font-size:.78rem;text-decoration:none;margin-right:4px">View</a>
+        <button onclick="markContacted('{lead.session_id}', this)"
+                style="{contacted_style};color:white;padding:4px 10px;border-radius:6px;
+                        font-size:.78rem;border:none;cursor:pointer">{contacted_label}</button>
+      </td>
     </tr>"""
 
 
@@ -41,16 +53,16 @@ async def dashboard(request: Request):
         )
         leads = result.scalars().all()
 
-        # Stats
         total = len(leads)
         hot = sum(1 for l in leads if l.score == "hot")
         warm = sum(1 for l in leads if l.score == "warm")
         cold = sum(1 for l in leads if l.score == "cold")
         viewings = sum(1 for l in leads if l.viewing_booked)
+        contacted_count = sum(1 for l in leads if getattr(l, "contacted", False))
 
     rows = "".join(_row(l) for l in leads)
     if not rows:
-        rows = '<tr><td colspan="7" style="text-align:center;padding:40px;color:#888">No leads yet — start a chat at <a href="/">/</a></td></tr>'
+        rows = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#888">No leads yet — start a chat at <a href="/">/</a></td></tr>'
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -68,95 +80,110 @@ async def dashboard(request: Request):
     header {{
       background: #0B1E3F;
       color: white;
-      padding: 18px 32px;
+      padding: 14px 32px;
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 14px;
     }}
-    header h1 {{ font-size: 1.3rem; font-weight: 700; }}
-    header span {{ color: #C9962E; font-size: 1.4rem; }}
+    .logo-wrap {{
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      overflow: hidden;
+      background: #C9962E;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem;
+      flex-shrink: 0;
+    }}
+    .logo-wrap img {{ width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }}
+    header h1 {{ font-size: 1.2rem; font-weight: 700; }}
+    header .sub {{ color: rgba(255,255,255,.6); font-size: .78rem; }}
     .stats {{
       display: flex;
-      gap: 16px;
-      padding: 24px 32px 0;
+      gap: 14px;
+      padding: 20px 32px 0;
       flex-wrap: wrap;
     }}
     .stat-card {{
       background: white;
       border-radius: 12px;
-      padding: 16px 24px;
-      min-width: 140px;
+      padding: 14px 22px;
+      min-width: 130px;
       box-shadow: 0 1px 4px rgba(0,0,0,.08);
       text-align: center;
     }}
-    .stat-card .val {{
-      font-size: 2rem;
-      font-weight: 800;
-      color: #0B1E3F;
-    }}
-    .stat-card .lbl {{ font-size: .8rem; color: #888; margin-top: 4px; }}
+    .stat-card .val {{ font-size: 1.9rem; font-weight: 800; color: #0B1E3F; }}
+    .stat-card .lbl {{ font-size: .78rem; color: #888; margin-top: 3px; }}
     .table-wrap {{
-      margin: 24px 32px;
+      margin: 20px 32px;
       background: white;
       border-radius: 12px;
       box-shadow: 0 1px 4px rgba(0,0,0,.08);
       overflow: hidden;
     }}
-    table {{ width: 100%; border-collapse: collapse; font-size: .9rem; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: .88rem; }}
     th {{
       background: #0B1E3F;
       color: white;
-      padding: 12px 16px;
+      padding: 11px 14px;
       text-align: left;
       font-weight: 600;
     }}
-    td {{ padding: 11px 16px; border-bottom: 1px solid #f0f2f5; }}
+    td {{ padding: 10px 14px; border-bottom: 1px solid #f0f2f5; vertical-align: middle; }}
     tr:last-child td {{ border-bottom: none; }}
     tr:hover td {{ background: #fafbfc; }}
-    .badge-hot {{ background: #ffe5e5; color: #c0392b; padding: 2px 10px; border-radius: 99px; font-size:.8rem; }}
-    .badge-warm {{ background: #fff3cd; color: #856404; padding: 2px 10px; border-radius: 99px; font-size:.8rem; }}
-    .badge-cold {{ background: #d1ecf1; color: #0c5460; padding: 2px 10px; border-radius: 99px; font-size:.8rem; }}
-    .actions {{
-      padding: 16px 32px;
+    .badge-hot  {{ background:#ffe5e5;color:#c0392b;padding:2px 9px;border-radius:99px;font-size:.78rem;white-space:nowrap; }}
+    .badge-warm {{ background:#fff3cd;color:#856404;padding:2px 9px;border-radius:99px;font-size:.78rem;white-space:nowrap; }}
+    .badge-cold {{ background:#d1ecf1;color:#0c5460;padding:2px 9px;border-radius:99px;font-size:.78rem;white-space:nowrap; }}
+    .toolbar {{
+      padding: 14px 32px;
       display: flex;
-      gap: 12px;
+      gap: 10px;
+      align-items: center;
     }}
     .btn {{
       background: #C9962E;
       color: white;
-      padding: 10px 20px;
+      padding: 9px 18px;
       border-radius: 8px;
       text-decoration: none;
       font-weight: 600;
-      font-size: .9rem;
+      font-size: .88rem;
+      border: none;
+      cursor: pointer;
     }}
     .btn:hover {{ background: #b07d22; }}
     @media (max-width: 700px) {{
-      .stats {{ padding: 16px; }}
-      .table-wrap {{ margin: 16px; }}
-      th:nth-child(6), td:nth-child(6) {{ display: none; }}
+      .stats {{ padding: 14px; gap: 10px; }}
+      .table-wrap {{ margin: 14px; }}
+      th:nth-child(6), td:nth-child(6),
+      th:nth-child(7), td:nth-child(7) {{ display: none; }}
     }}
   </style>
 </head>
 <body>
   <header>
-    <span>⚖️</span>
+    <div class="logo-wrap">
+      <img src="/static/wakeel-logo.png" alt="Wakeel"
+           onerror="this.style.display='none';this.parentElement.textContent='⚖️'">
+    </div>
     <div>
       <h1>Wakeel AI — Lead Dashboard</h1>
-      <div style="font-size:.8rem;opacity:.7">Real-time lead qualification overview</div>
+      <div class="sub">Real-time lead qualification overview</div>
     </div>
   </header>
 
   <div class="stats">
-    <div class="stat-card"><div class="val">{total}</div><div class="lbl">Total Leads</div></div>
+    <div class="stat-card"><div class="val">{total}</div><div class="lbl">Total</div></div>
     <div class="stat-card"><div class="val" style="color:#e74c3c">🔥 {hot}</div><div class="lbl">Hot</div></div>
     <div class="stat-card"><div class="val" style="color:#f39c12">⚡ {warm}</div><div class="lbl">Warm</div></div>
     <div class="stat-card"><div class="val" style="color:#3498db">❄️ {cold}</div><div class="lbl">Cold</div></div>
     <div class="stat-card"><div class="val" style="color:#27ae60">📅 {viewings}</div><div class="lbl">Viewings</div></div>
+    <div class="stat-card"><div class="val" style="color:#8e44ad">✅ {contacted_count}</div><div class="lbl">Contacted</div></div>
   </div>
 
-  <div class="actions">
-    <a href="/" class="btn">💬 Open Chat Demo</a>
+  <div class="toolbar">
+    <a href="/" class="btn">💬 Open Chat</a>
+    <button class="btn" style="background:#0B1E3F" onclick="location.reload()">↺ Refresh</button>
   </div>
 
   <div class="table-wrap">
@@ -167,8 +194,9 @@ async def dashboard(request: Request):
           <th>Name</th>
           <th>Phone</th>
           <th>Score</th>
-          <th>Messages</th>
+          <th>Msgs</th>
           <th>Summary</th>
+          <th>Status</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -177,5 +205,21 @@ async def dashboard(request: Request):
       </tbody>
     </table>
   </div>
+
+<script>
+async function markContacted(sessionId, btn) {{
+  try {{
+    const r = await fetch(`/api/leads/${{sessionId}}/contacted`, {{method: 'POST'}});
+    const d = await r.json();
+    if (d.contacted) {{
+      btn.textContent = 'Contacted ✓';
+      btn.style.background = '#27ae60';
+    }} else {{
+      btn.textContent = 'Mark contacted';
+      btn.style.background = '#95a5a6';
+    }}
+  }} catch(e) {{ alert('Error updating status'); }}
+}}
+</script>
 </body>
 </html>"""

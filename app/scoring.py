@@ -33,7 +33,9 @@ def score_lead(lead: Lead) -> LeadScore:
         points += 1
 
     if points >= 10:
-        return LeadScore.HOT
+        if lead.contact_phone:
+            return LeadScore.HOT
+        return LeadScore.WARM  # HOT requires a phone number
     if points >= 5:
         return LeadScore.WARM
     return LeadScore.COLD

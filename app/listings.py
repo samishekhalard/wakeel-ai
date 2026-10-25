@@ -111,6 +111,53 @@ def match_listings(
     return results[:limit]
 
 
+def match_listings_best_effort(
+    city: str | None = None,
+    intent: str | None = None,
+    budget_max: float | None = None,
+    area: str | None = None,
+    property_type: str | None = None,
+    bedrooms: int | None = None,
+    payment_method: str | None = None,
+    limit: int = 3,
+) -> tuple[list[dict[str, Any]], str]:
+    """Like match_listings but never returns empty — progressively relaxes constraints.
+    Returns (listings, note) where note is "" | "nearby_area" | "slightly_over_budget" | "different_config" | "showing_available".
+    """
+    r = match_listings(city=city, intent=intent, budget_max=budget_max, area=area,
+                       property_type=property_type, bedrooms=bedrooms,
+                       payment_method=payment_method, limit=limit)
+    if r:
+        return r, ""
+
+    # Relax: drop area
+    r = match_listings(city=city, intent=intent, budget_max=budget_max, area=None,
+                       property_type=property_type, bedrooms=bedrooms,
+                       payment_method=payment_method, limit=limit)
+    if r:
+        return r, "nearby_area"
+
+    # Relax: drop area + stretch budget 30%
+    r = match_listings(city=city, intent=intent,
+                       budget_max=budget_max * 1.30 if budget_max else None,
+                       area=None, property_type=property_type, bedrooms=bedrooms,
+                       payment_method=payment_method, limit=limit)
+    if r:
+        return r, "slightly_over_budget"
+
+    # Relax: drop area + bedrooms + property_type
+    r = match_listings(city=city, intent=intent,
+                       budget_max=budget_max * 1.40 if budget_max else None,
+                       area=None, property_type=None, bedrooms=None,
+                       payment_method=payment_method, limit=limit)
+    if r:
+        return r, "different_config"
+
+    # Last resort: city + intent only
+    r = match_listings(city=city, intent=intent, limit=limit)
+    return r, "showing_available"
+
+
 def format_listing_for_chat(listing: dict[str, Any], language: str = "en") -> str:
     area = listing.get("area", "")
     city = listing.get("city", "")

@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import Optional
-from sqlalchemy import String, Text, Float, DateTime, Integer, Boolean
+from sqlalchemy import String, Text, Float, DateTime, Integer, Boolean, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.ext.asyncio import AsyncAttrs, create_async_engine, async_sessionmaker
 
@@ -43,6 +43,8 @@ class Lead(Base):
     contact_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     contact_phone: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     message_count: Mapped[int] = mapped_column(Integer, default=0)
+    viewing_time: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    contacted: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Message(Base):
@@ -66,3 +68,9 @@ def create_session_factory(engine):
 async def init_db(engine) -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Safe migration: add new columns to existing SQLite databases
+        for col, typedef in [("viewing_time", "TEXT"), ("contacted", "INTEGER DEFAULT 0")]:
+            try:
+                await conn.execute(text(f"ALTER TABLE leads ADD COLUMN {col} {typedef}"))
+            except Exception:
+                pass  # Column already exists
